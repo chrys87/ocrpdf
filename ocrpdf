@@ -59,7 +59,6 @@ class OCRpdf(Gtk.Window):
 		self._offsetYpos = 0
 		self.GTKmainIsRunning = False
 		locale.setlocale(locale.LC_NUMERIC, 'C') #needed by tesseract in non english languages 
-		self._macro = OCRMacroManager()
 		self._languageCode = 'eng'
 		self._tess = None
 		self._isRefreshing = False
@@ -86,21 +85,7 @@ class OCRpdf(Gtk.Window):
 		self._sendToClipboard = sendToClipboard_p
 
 	def _openPDF(self):
-		#pixBuff = Gdk.pixbuf_get_from_window(gdkCurrDesktop, self._offsetXpos, self._offsetYpos , wnckWidth, wnckHeight)
-		if self._debug:
-			pixBuff.savev('/tmp/ocrpixBuff.bmp', 'bmp', [], []) # Debug code
-			print("save pixBuff /tmp/ocrpixBuff.bmp")
-		if (pixBuff != None):
-			self._img = self.pixbuf2image(pixBuff)
-			if self._debug: # Debug code
-				self._img.save("/tmp/ocrpdf.png") 
-				print("save screenshot:/tmp/ocrpdf.png") 
-			self._scaleImg()
-			return True
-		else:
-			if self._debug: # Debug code
-				print("Could not read pdf") 
-			return False
+		return True 
 
 	def _scaleImg(self):
 		width_screen, height_screen = self._img.size
@@ -457,7 +442,7 @@ class OCRreader():
 			return
 
 		#NAVIGATION
-		self._Navigation = OCRreader(self._debug)
+		self._Navigation = OCRpdf(self._debug)
 		self._Navigation._setlanguageCode(self._languageCode)
 		self._Navigation._setGrayscaleImg(self._grayscaleImg)
 		self._Navigation._setInvertImg(self._invertImg)
@@ -466,7 +451,7 @@ class OCRreader():
 		self._Navigation._setSendToClipboard(self._sendToClipboard)
 		self._Navigation._setHideGui(self._hideGui)
 		
-		if self._Navigation._screenShot():
+		if self._Navigation._openPDF():
 			if not self._hideGui:
 				self._Navigation.showGUI()
 			else:
