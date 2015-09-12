@@ -12,7 +12,7 @@ __website__   = "https://github.com/chrys87/ocrpdf"
 __appname__   = "OCRpdf"
 __comments__  = "A accessibility tool for easy read a non OCR PDF"
 #Python Utils
-import os, sys, getopt, locale, re,
+import os, sys, getopt, locale, re
 #PIL
 from PIL import Image
 from PIL import ImageOps
