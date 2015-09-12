@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 
-"""OCRdesktop"""
+"""OCRpdf"""
 
 __version__   = "0.1.0"
 __copyright__ = "Copyright (c) 2015 Chrys"
@@ -85,55 +85,22 @@ class OCRpdf(Gtk.Window):
 	def _setSendToClipboard(self, sendToClipboard_p = False):
 		self._sendToClipboard = sendToClipboard_p
 
-	def _screenShotDesktop(self):
-		CurrDesktop = Gdk.get_default_root_window()	
-		pixBuff = Gdk.pixbuf_get_from_window(CurrDesktop, 0, 0, CurrDesktop.get_width(), CurrDesktop.get_height())
-		if (pixBuff != None):
-			self._img = self.pixbuf2image(pixBuff)
-			if self._debug: # Debug code
-				self._img.save("/tmp/ocrScreenshot.png") 
-				print("save screenshot:/tmp/ocrScreenshot.png") 
-			self._scaleImg()
-			return True
-		else:
-			if self._debug: # Debug code
-				print("Could not take screenshot") 
-			return False
-
-	def _openPDF(self): #Mode=0 Desktop  Mode=1 CurrWindow
-		Gtk.main_iteration_do(False) # workarround segfault
-		gdkCurrDesktop = Gdk.get_default_root_window()
-		currWnckScreen = Wnck.Screen.get_default()
-		currWnckScreen.force_update()
-		currWnckWindow = currWnckScreen.get_active_window()
-		self._offsetXpos, self._offsetYpos, wnckWidth, wnckHeight = Wnck.Window.get_geometry(currWnckWindow)
-		pixBuff = Gdk.pixbuf_get_from_window(gdkCurrDesktop, self._offsetXpos, self._offsetYpos , wnckWidth, wnckHeight)
+	def _openPDF(self):
+		#pixBuff = Gdk.pixbuf_get_from_window(gdkCurrDesktop, self._offsetXpos, self._offsetYpos , wnckWidth, wnckHeight)
 		if self._debug:
 			pixBuff.savev('/tmp/ocrpixBuff.bmp', 'bmp', [], []) # Debug code
 			print("save pixBuff /tmp/ocrpixBuff.bmp")
 		if (pixBuff != None):
 			self._img = self.pixbuf2image(pixBuff)
 			if self._debug: # Debug code
-				self._img.save("/tmp/ocrScreenshot.png") 
-				print("save screenshot:/tmp/ocrScreenshot.png") 
+				self._img.save("/tmp/ocrpdf.png") 
+				print("save screenshot:/tmp/ocrpdf.png") 
 			self._scaleImg()
 			return True
 		else:
 			if self._debug: # Debug code
-				print("Could not take screenshot") 
+				print("Could not read pdf") 
 			return False
-
-	def pixbuf2image(self, pix):
-		"""Convert gdkpixbuf to PIL image"""
-		data = pix.get_pixels()
-		w = pix.props.width
-		h = pix.props.height
-		stride = pix.props.rowstride
-		mode = "RGB"
-		if pix.props.has_alpha == True:
-			mode = "RGBA"
-		im = Image.frombytes(mode, (w, h), data, "raw", mode, stride)
-		return im
 
 	def _scaleImg(self):
 		width_screen, height_screen = self._img.size
@@ -144,7 +111,6 @@ class OCRpdf(Gtk.Window):
 			self._img.save("/tmp/ocrScreenshotScaled.png")
 			print("save scaled screenshot:/tmp/ocrScreenshotScaled.png")
 
-				
 	def _ocrImage(self):
 		if self._modifiedImg is None:
 			return False
@@ -277,16 +243,7 @@ class OCRpdf(Gtk.Window):
 					cell = cell / self._scaleFactor + self._offsetXpos
 				if i == 6:
 					cell = cell / self._scaleFactor + self._offsetYpos
-#				if i == 1:
 				model.set_value(rowIter, i, cell)
-#					i = i + 1
-#					cell = 12
-#					model.set_value(rowIter, i, cell)
-#					i = i + 1
-#					cell = 'black'
-#					model.set_value(rowIter, i, cell)
-#				else:
-#					model.set_value(rowIter, i, cell)
 
 		self._tree.set_search_column(1)
 		self._grid.attach(self._scrolledWindowTree, 0, 1, 10, 10)
@@ -386,31 +343,10 @@ class OCRpdf(Gtk.Window):
 
 		self.connect("delete-event", Gtk.main_quit)
 		self.connect('key-release-event', self._onKeyRelease)
-		#self._textbuffer.connect("notify::cursor-position", self._onCursorTextPositionChanged)
-		#self._tree.connect("notify::cursor-position", self._onCursorTreePositionChanged)
-		
 
 		self._grid.attach(self._menubar,0,0,10,1)
 		self._grid.attach(self._font_button, 0, 11, 3, 1)
 		self.add(self._grid)
-
-	def _onCursorTextPositionChanged(self, widget, event):
-		#print(widget.props.cursor_position)
-		#position = widget.get_iter_at_offset(widget.props.cursor_position)
-		#if not widget.get_start_iter() is None:
-		#	print(widget.get_text(widget.get_start_iter(),position,False).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
-#TODO set the pos correct		
-	#wtf is thist not working		self._tree.set_cursor(widget.get_text(widget.get_start_iter(),position,True).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
-		pass
-
-	def _onCursorTreePositionChanged(self, widget, event):
-#TODO set the pos correct
-		#print(widget.props.cursor_position)
-		#position = widget.get_iter_at_offset(widget.props.cursor_position)
-		#if not widget.get_start_iter() is None:
-		#	print(widget.get_text(widget.get_start_iter(),position,False).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
-		#	self._tree.set_cursor(widget.get_text(widget.get_start_iter(),position,True).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
-		pass
 
 	def setFocus(self):
 		if self._viewMode == 0:		
@@ -471,12 +407,6 @@ class OCRpdf(Gtk.Window):
 		entries_for_keycode = keymap.get_entries_for_keycode(keycode)
 		entries = entries_for_keycode[-1]
 		eventString = Gdk.keyval_name(entries[0])
-#		if self._debug:
-#			print(eventString)
-#		if eventString == 'Escape':
-#			Gtk.main_quit()
-#		if eventString == 'Return':
-#			self._leftClickButton.grab_focus()
 
 	def _cancel(self):
 		if self.GTKmainIsRunning:
@@ -535,10 +465,6 @@ class OCRreader():
 		self._Navigation._setBlackWhiteImgValue(self._blackWhiteImgValue)
 		self._Navigation._setSendToClipboard(self._sendToClipboard)
 		self._Navigation._setHideGui(self._hideGui)
-		if self._debug:
-			print("PreWaitForFinish")
-		self._macro.WaitForFinish()
-		self._Navigation._setMacro(self._macro)
 		
 		if self._Navigation._screenShot():
 			if not self._hideGui:
