@@ -1,0 +1,597 @@
+#!/bin/python3
+# -*- coding: utf-8 -*-
+
+
+"""OCRdesktop"""
+
+__version__   = "0.1.0"
+__copyright__ = "Copyright (c) 2015 Chrys"
+__license__   = "GPL"
+__authors__   = ["chrys"]
+__website__   = "https://github.com/chrys87/ocrpdf"
+__appname__   = "OCRpdf"
+__comments__  = "A accessibility tool for easy read a non OCR PDF"
+#Python Utils
+import os, sys, getopt, locale, re,
+#PIL
+from PIL import Image
+from PIL import ImageOps
+
+#tesseract
+from tesserwrap import tesseract
+
+#gi
+import gi
+
+#GTK/GDK/Wnck/GObject
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gtk, Gdk, GObject, Wnck
+
+# here the class
+class OCRpdf(Gtk.Window):
+	def __init__(self, debug_p = False):
+		self._debug = debug_p
+		self._tree = None
+		self._textbox = None
+		self._textbuffer = None
+		self._viewButton = None
+		self._viewMode = 0
+		self._sendToClipboard = False
+		self._hideGui = False
+		self._scrolledWindowTree = None
+		self._scrolledWindowText = None
+		self._grid = None
+		self._menubar = None
+		self._font_button = None
+		self._accelerators = None
+		self._OCRWords = None		
+		self._OCRWordList = []
+		self._OCRText = ''
+		self._img = None
+		self._modifiedImg = None
+		self._grayscaleImg = False
+		self._invertImg = False
+		self._blackWhiteImg = False
+		self._blackWhiteImgValue = 200
+		self._scaleFactor = 3
+		self._offsetXpos = 0
+		self._offsetYpos = 0
+		self.GTKmainIsRunning = False
+		locale.setlocale(locale.LC_NUMERIC, 'C') #needed by tesseract in non english languages 
+		self._macro = OCRMacroManager()
+		self._languageCode = 'eng'
+		self._tess = None
+		self._isRefreshing = False
+		
+	def _setHideGui(self, hideGui_p = False):
+		self.hideGui = hideGui_p
+
+	def _setlanguageCode(self, languageCode_p = 'eng'):
+		self._languageCode = languageCode_p
+		
+	def _setGrayscaleImg(self, grayscaleImg_p = False):
+		self._grayscaleImg = grayscaleImg_p
+
+	def _setInvertImg(self, invertImg_p = False):
+		self._invertImg = invertImg_p
+
+	def _setBlackWhiteImg(self, blackWhiteImg_p = False):
+		self._blackWhiteImg = blackWhiteImg_p
+
+	def _setBlackWhiteImgValue(self, blackWhiteImgValue_p = 200):
+		self._blackWhiteImgValue = blackWhiteImgValue_p
+
+	def _setSendToClipboard(self, sendToClipboard_p = False):
+		self._sendToClipboard = sendToClipboard_p
+
+	def _screenShotDesktop(self):
+		CurrDesktop = Gdk.get_default_root_window()	
+		pixBuff = Gdk.pixbuf_get_from_window(CurrDesktop, 0, 0, CurrDesktop.get_width(), CurrDesktop.get_height())
+		if (pixBuff != None):
+			self._img = self.pixbuf2image(pixBuff)
+			if self._debug: # Debug code
+				self._img.save("/tmp/ocrScreenshot.png") 
+				print("save screenshot:/tmp/ocrScreenshot.png") 
+			self._scaleImg()
+			return True
+		else:
+			if self._debug: # Debug code
+				print("Could not take screenshot") 
+			return False
+
+	def _openPDF(self): #Mode=0 Desktop  Mode=1 CurrWindow
+		Gtk.main_iteration_do(False) # workarround segfault
+		gdkCurrDesktop = Gdk.get_default_root_window()
+		currWnckScreen = Wnck.Screen.get_default()
+		currWnckScreen.force_update()
+		currWnckWindow = currWnckScreen.get_active_window()
+		self._offsetXpos, self._offsetYpos, wnckWidth, wnckHeight = Wnck.Window.get_geometry(currWnckWindow)
+		pixBuff = Gdk.pixbuf_get_from_window(gdkCurrDesktop, self._offsetXpos, self._offsetYpos , wnckWidth, wnckHeight)
+		if self._debug:
+			pixBuff.savev('/tmp/ocrpixBuff.bmp', 'bmp', [], []) # Debug code
+			print("save pixBuff /tmp/ocrpixBuff.bmp")
+		if (pixBuff != None):
+			self._img = self.pixbuf2image(pixBuff)
+			if self._debug: # Debug code
+				self._img.save("/tmp/ocrScreenshot.png") 
+				print("save screenshot:/tmp/ocrScreenshot.png") 
+			self._scaleImg()
+			return True
+		else:
+			if self._debug: # Debug code
+				print("Could not take screenshot") 
+			return False
+
+	def pixbuf2image(self, pix):
+		"""Convert gdkpixbuf to PIL image"""
+		data = pix.get_pixels()
+		w = pix.props.width
+		h = pix.props.height
+		stride = pix.props.rowstride
+		mode = "RGB"
+		if pix.props.has_alpha == True:
+			mode = "RGBA"
+		im = Image.frombytes(mode, (w, h), data, "raw", mode, stride)
+		return im
+
+	def _scaleImg(self):
+		width_screen, height_screen = self._img.size
+		width_screen =  width_screen * self._scaleFactor
+		height_screen = height_screen * self._scaleFactor
+		self._img = self._img.resize( (width_screen, height_screen), Image.BICUBIC)
+		if self._debug: # Debug code
+			self._img.save("/tmp/ocrScreenshotScaled.png")
+			print("save scaled screenshot:/tmp/ocrScreenshotScaled.png")
+
+				
+	def _ocrImage(self):
+		if self._modifiedImg is None:
+			return False
+		self._tess = tesseract("/usr/share", self._languageCode)
+				
+		self._OCRText = self._tess.ocr_image(self._modifiedImg)
+		regexSpace = re.compile('[^\S\r\n]{2,}') #remove double spaces
+		self._OCRText = regexSpace.sub(' ',self._OCRText)
+		regexSpace = re.compile('\n\s*\n') #remove empty lines
+		self._OCRText = regexSpace.sub('\n',self._OCRText)
+		regexSpace = re.compile('\s*\n') #remove ending spaces
+		self._OCRText = regexSpace.sub('\n',self._OCRText)
+		regexSpace = re.compile('\n\s') #remove trailing spaces
+		self._OCRText = regexSpace.sub( '\n', self._OCRText)
+		regexSpace = re.compile('^\s') #remove trailing space in first line
+		self._OCRText = regexSpace.sub( '\n', self._OCRText)
+		regexSpace = re.compile('$\n') #remove ending newline
+		self._OCRText = regexSpace.sub( '', self._OCRText)
+		if self._sendToClipboard:
+			self._setTextToClipboard( self._OCRText)
+		if not self._hideGui:
+			self._OCRWords = self._tess.get_words()
+			self._fillOCRWordlist()
+		return True
+
+	def _fillOCRWordlist(self):
+		for OCRWord in self._OCRWords: # fill the list
+			if int(OCRWord.confidence) != 0:
+				self._OCRWordList.append([OCRWord.value.decode("utf-8"),
+				  round((OCRWord.box[3] - OCRWord.box[1]) / 3 * 0.78,0),
+				  'unknown',
+				  'text',
+				  int((OCRWord.box[2] - OCRWord.box[0]) / 2 + OCRWord.box[0]),
+				  int((OCRWord.box[3] - OCRWord.box[1]) / 2 + OCRWord.box[1]),
+				  int(OCRWord.confidence)])
+
+	def add_accelerator(self, widget, accelerator, signal="activate"):
+		"""Adds a keyboard shortcut"""
+		if accelerator is not None:
+			key, mod = Gtk.accelerator_parse(accelerator)
+			widget.add_accelerator(signal, self._accelerators, key, mod, Gtk.AccelFlags.VISIBLE)
+
+	def on_font_set(self, widget):
+		font_description = widget.get_font_desc()
+		self._textbox.modify_font(font_description)
+		
+	def _onRefreshContent(self, widget):
+		self._refreshContent()
+	
+	def _transformImg(self):
+		self._modifiedImg = self._img
+		if self._invertImg:
+			self._modifiedImg = ImageOps.invert(self._modifiedImg)
+		if self._grayscaleImg:
+			self._modifiedImg = ImageOps.grayscale(self._modifiedImg)
+		if self._blackWhiteImg:
+			lut = [255 if v > self._blackWhiteImgValue else 0 for v in range(256)]
+			self._modifiedImg = self._modifiedImg.point(lut)
+		if self._debug: # Debug code
+			self._modifiedImg.save("/tmp/ocrScreenshotTransformed.png")
+			print("save scaled screenshot:/tmp/ocrScreenshotTransformed.png")			
+		
+	def _refreshContent(self):
+		if self._isRefreshing == True:
+			print("refresh already running")
+			return
+		self._isRefreshing = True
+		if self._debug:
+			print("refresh")
+		self._tree = None
+		self._OCRWords = None		
+		self._OCRWordList = []
+		self._OCRText = ''
+		self._scrolledWindowTree = None
+		self._scrolledWindowText = None
+		self._textbox = None
+		self._transformImg()
+		self._ocrImage()
+
+		self._scrolledWindowText = Gtk.ScrolledWindow()
+
+		self._textbox = Gtk.TextView()
+		self._textbox.set_hexpand(True)
+		self._textbox.set_vexpand(True)
+		self._textbox.show()
+		self._textbuffer = self._textbox.get_buffer()
+		self._textbuffer.set_text(self._OCRText)
+		self._textbox.set_editable(False)
+		if not self._textbuffer.get_start_iter() is None:
+			self._textbuffer.place_cursor(self._textbuffer.get_start_iter())
+		self._scrolledWindowText.add(self._textbox)
+		
+		self._scrolledWindowTree = Gtk.ScrolledWindow()
+		self._tree = Gtk.TreeView()
+		self._tree.set_hexpand(True)
+		self._tree.set_vexpand(True)
+		self._tree.show()
+		self._scrolledWindowTree.add(self._tree)
+
+		cols = [GObject.TYPE_STRING]
+		cols.extend([GObject.TYPE_STRING])
+		cols.extend([GObject.TYPE_INT])	
+		cols.extend([GObject.TYPE_STRING])
+		cols.extend([GObject.TYPE_STRING])
+		cols.extend([GObject.TYPE_INT])		
+		cols.extend([GObject.TYPE_INT])
+		cols.extend([GObject.TYPE_INT])
+		model = Gtk.ListStore(*cols)
+		self._tree.set_model(model)
+		columnHeaders = ['OCR Text','Fontsize','Color','Object','X Position','Y Position','Confidence']
+		
+		cell = Gtk.CellRendererText()
+		column = Gtk.TreeViewColumn("OCR Text", cell, text=0)
+		column.set_visible(False)
+		self._tree.append_column(column)
+
+		for i, header in enumerate(columnHeaders):
+			cell = Gtk.CellRendererText()
+			column = Gtk.TreeViewColumn(header, cell, text=i+1)
+			#column.set_sort_column_id(i+1)
+			self._tree.append_column(column)
+
+		model = self._tree.get_model()
+		for row in self._OCRWordList:
+			rowIter = model.append(None)
+			i = 0
+			for cell in row:
+				i = i + 1
+				if i == 5:
+					cell = cell / self._scaleFactor + self._offsetXpos
+				if i == 6:
+					cell = cell / self._scaleFactor + self._offsetYpos
+#				if i == 1:
+				model.set_value(rowIter, i, cell)
+#					i = i + 1
+#					cell = 12
+#					model.set_value(rowIter, i, cell)
+#					i = i + 1
+#					cell = 'black'
+#					model.set_value(rowIter, i, cell)
+#				else:
+#					model.set_value(rowIter, i, cell)
+
+		self._tree.set_search_column(1)
+		self._grid.attach(self._scrolledWindowTree, 0, 1, 10, 10)
+		self._grid.attach(self._scrolledWindowText, 0, 1, 10, 10)
+		self._setView(False)
+		self._isRefreshing = False
+
+	def _toggleGrayscaleImg(self, widget):
+		self._grayscaleImg = widget.get_active()
+		if not self._grayscaleImg:
+			self.item_barrierbw.set_active(False)
+
+	def _toggleInvertImg(self, widget):
+		self._invertImg = widget.get_active()
+
+	def _toggleBlackWhiteImg(self, widget):
+		self._blackWhiteImg = widget.get_active()
+		if self._blackWhiteImg:
+			self.item_grayscale.set_active(True)
+
+	def _createNavListDialog(self):
+		Gtk.Window.__init__(self, title="OCR")
+		self.set_default_size(700,800)
+		self._grid = Gtk.Grid()
+	
+		self._accelerators = Gtk.AccelGroup()
+
+		self._menubar = Gtk.MenuBar()
+
+		self.menu_ocrdesktop = Gtk.Menu()
+		self.item_toggleview = Gtk.MenuItem("Toggle _View")
+		self.item_toggleview.set_use_underline(True)
+		self.add_accelerator(self.item_toggleview, "<Control>v","activate")
+		self.item_ocroptions = Gtk.MenuItem("_OCR Options")
+		self.item_ocroptions.set_use_underline(True)
+		self.option_sub_menu = Gtk.Menu()
+		self.item_ocroptions.set_submenu(self.option_sub_menu)
+		self.item_invert = Gtk.CheckMenuItem("_Invert")
+		self.item_invert.set_use_underline(True)
+		self.item_grayscale = Gtk.CheckMenuItem("_Grayscale")
+		self.item_grayscale.set_use_underline(True)
+		self.item_barrierbw = Gtk.CheckMenuItem("_Barrier Black White")
+		self.item_barrierbw.set_use_underline(True)
+		self.option_sub_menu.append(self.item_invert)
+		self.option_sub_menu.append(self.item_grayscale)
+		self.option_sub_menu.append(self.item_barrierbw)
+		self.item_invert.set_active(self._invertImg)
+		self.item_grayscale.set_active(self._grayscaleImg)
+		self.item_barrierbw.set_active(self._blackWhiteImg)
+		self.item_invert.connect("activate", self._toggleInvertImg)
+		self.item_grayscale.connect("activate", self._toggleGrayscaleImg)
+		self.item_barrierbw.connect("activate", self._toggleBlackWhiteImg)
+		
+		self.item_retry = Gtk.MenuItem("_Retry OCR")
+		self.item_retry.set_use_underline(True)
+		self.add_accelerator(self.item_retry, "F5","activate")
+		self.item_clipboard = Gtk.MenuItem("Send to _Clipboard")
+		self.item_clipboard.set_use_underline(True)
+		self.add_accelerator(self.item_clipboard, "<Control>b","activate")
+		self.item_font = Gtk.MenuItem("_Font")
+		self.item_font.set_use_underline(True)
+		self.item_close = Gtk.MenuItem("_Close")
+		self.add_accelerator(self.item_close, "<Control>q","activate")
+		self.item_close.set_use_underline(True)
+		self.menu_ocrdesktop.append(self.item_toggleview)
+		self.menu_ocrdesktop.append(self.item_ocroptions)
+		self.menu_ocrdesktop.append(self.item_retry)
+		self.menu_ocrdesktop.append(self.item_clipboard)
+		#self.menu_ocrdesktop.append(self.item_font)
+		self.menu_ocrdesktop.append(self.item_close)
+		self.item_toggleview.connect("activate", self._onSetView,True)
+		self.item_retry.connect("activate", self._onRefreshContent)
+		self.item_clipboard.connect("activate", self._onSetTextToClipboard)
+		self.item_close.connect("activate", Gtk.main_quit)
+		
+		self.menu_help = Gtk.Menu()
+		self.item_about = Gtk.MenuItem("_About")
+		self.item_about.set_use_underline(True)	
+		self.menu_help.append(self.item_about)
+		self.item_about.connect("activate", self._onRunAboutDialog, self)
+
+		self.item_ocrdesktop = Gtk.MenuItem("_OCRdektop")
+		self.item_ocrdesktop.set_use_underline(True)
+		self.item_help = Gtk.MenuItem("_Help")
+		self.item_help.set_use_underline(True)
+
+		self.item_ocrdesktop.set_submenu(self.menu_ocrdesktop)
+		self.item_help.set_submenu(self.menu_help)
+		self._menubar.append(self.item_ocrdesktop)
+		self._menubar.append(self.item_help)
+		self.add_accel_group(self._accelerators)
+		
+		self._font_button = Gtk.FontButton()
+		self._font_button.connect('font-set', self.on_font_set)
+		
+		self._refreshContent()
+
+		self.connect("delete-event", Gtk.main_quit)
+		self.connect('key-release-event', self._onKeyRelease)
+		#self._textbuffer.connect("notify::cursor-position", self._onCursorTextPositionChanged)
+		#self._tree.connect("notify::cursor-position", self._onCursorTreePositionChanged)
+		
+
+		self._grid.attach(self._menubar,0,0,10,1)
+		self._grid.attach(self._font_button, 0, 11, 3, 1)
+		self.add(self._grid)
+
+	def _onCursorTextPositionChanged(self, widget, event):
+		#print(widget.props.cursor_position)
+		#position = widget.get_iter_at_offset(widget.props.cursor_position)
+		#if not widget.get_start_iter() is None:
+		#	print(widget.get_text(widget.get_start_iter(),position,False).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
+#TODO set the pos correct		
+	#wtf is thist not working		self._tree.set_cursor(widget.get_text(widget.get_start_iter(),position,True).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
+		pass
+
+	def _onCursorTreePositionChanged(self, widget, event):
+#TODO set the pos correct
+		#print(widget.props.cursor_position)
+		#position = widget.get_iter_at_offset(widget.props.cursor_position)
+		#if not widget.get_start_iter() is None:
+		#	print(widget.get_text(widget.get_start_iter(),position,False).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
+		#	self._tree.set_cursor(widget.get_text(widget.get_start_iter(),position,True).count('\n')+widget.get_text(widget.get_start_iter(),position,True).count(' '))
+		pass
+
+	def setFocus(self):
+		if self._viewMode == 0:		
+			position = self._textbuffer.get_iter_at_offset(self._textbuffer.props.cursor_position)
+			if not self._textbuffer.get_start_iter() is None:
+				self._tree.set_cursor(self._textbuffer.get_text(self._textbuffer.get_start_iter(),position,True).count('\n')+self._textbuffer.get_text(self._textbuffer.get_start_iter(),position,True).count(' '))
+
+	def showGUI(self):
+		self._gui = self._createNavListDialog()
+		self.set_modal(True)
+		self.show_all()
+		self._setView(False)
+		self.startMain()
+		
+	def startMain(self):
+		self.GTKmainIsRunning = True
+		Gtk.main()
+
+	def _onRunAboutDialog(self,widget,window):
+		dialog = Gtk.AboutDialog(window)
+		dialog.set_authors(__authors__)
+		dialog.set_website(__website__)
+		dialog.set_copyright(__copyright__)
+		dialog.set_license(__license__)
+		dialog.set_version(__version__)
+		dialog.set_program_name(__appname__)
+		dialog.set_comments(__comments__)
+		dialog.run()
+		dialog.destroy()
+		
+	def _onSetView(self, widget, Toggle=True):
+		self._setView(Toggle)
+			
+	def _setView(self, Toggle):
+		
+		self._scrolledWindowTree.hide()	
+		self._scrolledWindowText.hide()	
+
+		self.setFocus()
+			
+		if Toggle:
+			if self._viewMode == 0:
+				self._viewMode = 1
+			elif self._viewMode == 1:
+				self._viewMode = 0
+		
+		if self._viewMode == 1:	
+			self._scrolledWindowTree.show()
+			self._tree.grab_focus()
+		elif self._viewMode == 0:
+			self._scrolledWindowText.show()
+			self._textbox.grab_focus()
+
+
+	def _onKeyRelease(self, widget, event):
+		keycode = event.hardware_keycode
+		keymap = Gdk.Keymap.get_default()
+		entries_for_keycode = keymap.get_entries_for_keycode(keycode)
+		entries = entries_for_keycode[-1]
+		eventString = Gdk.keyval_name(entries[0])
+#		if self._debug:
+#			print(eventString)
+#		if eventString == 'Escape':
+#			Gtk.main_quit()
+#		if eventString == 'Return':
+#			self._leftClickButton.grab_focus()
+
+	def _cancel(self):
+		if self.GTKmainIsRunning:
+			Gtk.main_quit()
+			GTKmainIsRunning = False
+
+	def _onSetTextToClipboard(self, widget):
+		self._setTextToClipboard(self._OCRText)
+
+	def _setTextToClipboard(self, text_p):
+		if self._debug:
+			print("----_setTextToClipboard Start--")
+			print(text_p)
+			print("----_setTextToClipboard End----")
+			
+		ClipboardObj = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+		ClipboardObj.set_text(text_p, -1)
+		ClipboardObj.store()
+
+	def _getSelectedEntry(self):
+		if not self._tree:
+			return None
+
+		selection = self._tree.get_selection()
+		if not selection:
+			return None
+
+		model, paths = selection.get_selected_rows()
+		if not paths:
+			return None
+
+		return model.get_value(model.get_iter(paths[0]), 2),model.get_value(model.get_iter(paths[0]), 3)
+
+class OCRreader():
+	def __init__(self):
+		self._sendToClipboard = False
+		self._hideGui = False
+		self._showHelp = False
+		self._debug = False
+		self._languageCode = 'eng'
+		self._grayscaleImg = False
+		self._invertImg = False
+		self._blackWhiteImg = False
+		self._blackWhiteImgValue = 200
+		self._setCommandLineOptions()
+
+		if self._showHelp:
+			return
+
+		#NAVIGATION
+		self._Navigation = OCRreader(self._debug)
+		self._Navigation._setlanguageCode(self._languageCode)
+		self._Navigation._setGrayscaleImg(self._grayscaleImg)
+		self._Navigation._setInvertImg(self._invertImg)
+		self._Navigation._setBlackWhiteImg(self._blackWhiteImg)
+		self._Navigation._setBlackWhiteImgValue(self._blackWhiteImgValue)
+		self._Navigation._setSendToClipboard(self._sendToClipboard)
+		self._Navigation._setHideGui(self._hideGui)
+		if self._debug:
+			print("PreWaitForFinish")
+		self._macro.WaitForFinish()
+		self._Navigation._setMacro(self._macro)
+		
+		if self._Navigation._screenShot():
+			if not self._hideGui:
+				self._Navigation.showGUI()
+			else:
+				self._Navigation._ocrImage()
+
+		#FUNCTIONS
+	def _setCommandLineOptions(self):
+		try:
+			myopts, args = getopt.getopt(sys.argv[1:],"hl:vndcgibt:m:")
+			###############################
+			# o == option
+			# a == argument passed to the o
+			###############################
+			for o, a in myopts:
+				if o == '-v':
+					self._debug = True
+					print('Debugmode ON')
+				elif o == '-g':
+						self._grayscaleImg = True
+				elif o == '-i':
+					self._invertImg = True
+				elif o == '-b':
+					self._grayscaleImg = True
+					self._blackWhiteImg = True
+				elif o == '-t':
+					self._blackWhiteImgValue = int(a)
+				elif o == '-c':
+					self._sendToClipboard = True
+				elif o == '-l':
+					self._languageCode = a
+				elif o == '-n':
+					self._hideGui = True
+				elif o == '-h':
+					self._printHelp()
+		except:
+					self._printHelp()
+
+	def _printHelp(self):
+		print(__version__)
+		print("ocrdesktop -h -l -n -c -i -g -b -t")
+		print("-h		Print help with start")
+		print("-l <lang>        set the OCR language default=eng")
+		print("-n		hide GUI  (use with -c or -m")
+		print("-v		print debug messages")
+		print("-c		Send to Clipboard")
+		print("-i       Invert the picture colors")
+		print("-g       Grayscale picture")
+		print("-b       break into hard black and white")
+		print("-t       the value for braking into black and white (-b) 0 (black) - 255 (white)")
+		self._showHelp = True				
+
+if __name__ == "__main__":
+	Application = OCRreader()
+
