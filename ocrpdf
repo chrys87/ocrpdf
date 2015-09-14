@@ -17,6 +17,8 @@ import os, sys, getopt, locale, re
 #PDF stuff
 from PyPDF2 import PdfFileReader
 import PythonMagick
+from PythonMagick import Image as PMImage #distinguish between PIL and PythonMagick 'Image' object
+from PythonMagick import Blob
 
 #PIL
 from PIL import Image
@@ -54,7 +56,7 @@ class OCRpdf(Gtk.Window):
 		self._OCRWordList = []
 		self._OCRText = ''
 		self._file = None
-		self._fileName = '/home/chrys/TestPDF.pdf'
+		self._fileName = '/home/chrys/Projekte/ocrpdf/source/ocrpdf/schufa.pdf'
 		self._img = []
 		self._modifiedImg = []
 		self._pageNo = 0
@@ -62,7 +64,7 @@ class OCRpdf(Gtk.Window):
 		self._invertImg = False
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
-		self._scaleFactor = 3
+		self._scaleFactor = 4
 		self._offsetXpos = 0
 		self._offsetYpos = 0
 		self.GTKmainIsRunning = False
@@ -92,15 +94,24 @@ class OCRpdf(Gtk.Window):
 	def _setSendToClipboard(self, sendToClipboard_p = False):
 		self._sendToClipboard = sendToClipboard_p
 
+	def convertMGtoPIL(self, magickimage):
+		img = PMImage(magickimage)  # make copy
+		img.write("/tmp/page.png")
+		pilimage = Image.open("/tmp/page.png")
+		return pilimage
+
 	def _openPDF(self):
 		if self._fileName == '':
 			return False
 		
 		self._file = PdfFileReader(open(self._fileName, "rb"))
 		self._pageNo = self._file.numPages
+		print(self._file.numPages)
 		for i in range(self._pageNo):
-			im = PythonMagick.Image(self._fileName+'['+ str(i) +']')
-			self._img.append(self._file.getPage(i))
+			im = self.convertMGtoPIL(PythonMagick.Image(self._fileName+'['+ str(i) +']'))
+			im.save("/tmp/page"+str(i)+".png")
+			self._img.append(im)
+			#self._img.append(self._file.getPage(i))
 			self._scaleImg(i)
 		return True 
 
@@ -165,12 +176,12 @@ class OCRpdf(Gtk.Window):
 	def _transformImg(self, Page_p):
 		if self._img[Page_p] == None:
 			return False
-		self._modifiedImg[Page_p] = self._img[Page_p]
-		if self._invertImg[Page_p]:
+		self._modifiedImg.append(self._img[Page_p])
+		if self._invertImg:
 			self._modifiedImg[Page_p] = ImageOps.invert(self._modifiedImg[Page_p])
 		if self._grayscaleImg:
 			self._modifiedImg[Page_p] = ImageOps.grayscale(self._modifiedImg[Page_p])
-		if self._blackWhiteImg[Page_p]:
+		if self._blackWhiteImg:
 			lut = [255 if v > self._blackWhiteImgValue else 0 for v in range(256)]
 			self._modifiedImg[Page_p] = self._modifiedImg[Page_p].point(lut)
 		if self._debug: # Debug code
@@ -193,6 +204,7 @@ class OCRpdf(Gtk.Window):
 		self._scrolledWindowText = None
 		self._textbox = None
 		for i in range(self._pageNo):
+			print(i)
 			self._transformImg(i)
 			self._ocrImage(i)
 
@@ -203,7 +215,7 @@ class OCRpdf(Gtk.Window):
 		self._textbox.set_vexpand(True)
 		self._textbox.show()
 		self._textbuffer = self._textbox.get_buffer()
-		self._textbuffer.set_text(self._textbuffer.get_text() + '\n' + self._OCRText)
+		#self._textbuffer.set_text(self._textbuffer.get_text() + '\n' + self._OCRText)
 		self._textbox.set_editable(False)
 		if not self._textbuffer.get_start_iter() is None:
 			self._textbuffer.place_cursor(self._textbuffer.get_start_iter())
