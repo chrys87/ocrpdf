@@ -12,7 +12,7 @@ __website__   = "https://github.com/chrys87/ocrpdf"
 __appname__   = "OCRpdf"
 __comments__  = "A accessibility tool for easy read a non OCR PDF"
 #Python Utils
-import os, sys, getopt, locale, re
+import os, sys, getopt, locale, re, time, _thread
 
 #PDF stuff
 from PyPDF2 import PdfFileReader
@@ -65,6 +65,9 @@ class OCRpdf(Gtk.Window):
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
 		self._scaleFactor = 3
+		self._maxNoOfOCRThreads = 2
+		self._currNoOfOCRThreads = 0
+		self._OCRThreadsFinished = False
 		self.GTKmainIsRunning = False
 		locale.setlocale(locale.LC_NUMERIC, 'C') #needed by tesseract in non english languages 
 		self._languageCode = 'eng'
@@ -76,6 +79,9 @@ class OCRpdf(Gtk.Window):
 
 	def _setlanguageCode(self, languageCode_p = 'eng'):
 		self._languageCode = languageCode_p
+		
+	def _setMaxNoOfOCRThreads(self, maxNoOfOCRThreads_p = 4):
+		self._maxNoOfOCRThreads = maxNoOfOCRThreads_p
 		
 	def _setGrayscaleImg(self, grayscaleImg_p = False):
 		self._grayscaleImg = grayscaleImg_p
@@ -105,19 +111,17 @@ class OCRpdf(Gtk.Window):
 		Reader = PdfFileReader(open(self._file, "rb"))
 		self._pageNo = Reader.numPages
 		if self._debug:
-			print(self._pageNo)
+			print("No of Pages: " + str(self._pageNo))
 		
 		for i in range(self._pageNo):
 			mgImg = PythonMagick.Image()
 			mgImg.density("300")
 			mgImg.read(self._file+'['+ str(i) +']')
-			im = self.convertMGtoPIL(mgImg)
-			self._img.append(im)
+			self._img.append(self.convertMGtoPIL(mgImg))
 			if self._debug: # Debug code
 				print("save page: /tmp/page"+str(i)+".png")
 				self._img[i].save("/tmp/page"+str(i)+".png")
-			#self._img.append(self._file.getPage(i))
-			self._scaleImg(i)
+			self._modifiedImg.append(self._img[i])
 		return True 
 
 	def _scaleImg(self, Page_p):
@@ -132,10 +136,10 @@ class OCRpdf(Gtk.Window):
 	def _ocrImage(self, Page_p):
 		if self._modifiedImg[Page_p] is None:
 			return False
-		self._tess = tesseract("/usr/share", self._languageCode)
+		tess = tesseract("/usr/share", self._languageCode)
 		if self._debug: # Debug code
 			print("OCR Page:"+str(Page_p))			
-		self._OCRText[Page_p] = self._tess.ocr_image(self._modifiedImg[Page_p])
+		self._OCRText[Page_p] = tess.ocr_image(self._modifiedImg[Page_p])
 		regexSpace = re.compile('[^\S\r\n]{2,}') #remove double spaces
 		self._OCRText[Page_p] = regexSpace.sub(' ',self._OCRText[Page_p])
 		regexSpace = re.compile('\n\s*\n') #remove empty lines
@@ -148,11 +152,13 @@ class OCRpdf(Gtk.Window):
 		self._OCRText[Page_p] = regexSpace.sub( '\n', self._OCRText[Page_p])
 		regexSpace = re.compile('$\n') #remove ending newline
 		self._OCRText[Page_p] = regexSpace.sub( '', self._OCRText[Page_p])
-		self._OCRWords[Page_p] = self._tess.get_words()
-		self._fillOCRWordlist(Page_p)
+		self._OCRWords[Page_p] = tess.get_words()
 		return True
 
 	def _fillOCRWordlist(self,Page_p):
+		self._OCRWordList.append(['---Page', 0, 'Black', 'ocrpdf message', 0])
+		self._OCRWordList.append([str(Page_p + 1) + '---', 0, 'Black', 'ocrpdf message', 0])
+				  
 		for OCRWord in self._OCRWords[Page_p]: # fill the list
 			if int(OCRWord.confidence) != 0:
 				self._OCRWordList.append([OCRWord.value.decode("utf-8"),
@@ -177,7 +183,6 @@ class OCRpdf(Gtk.Window):
 	def _transformImg(self, Page_p):
 		if self._img[Page_p] == None:
 			return False
-		self._modifiedImg.append(self._img[Page_p])
 		if self._invertImg:
 			self._modifiedImg[Page_p] = ImageOps.invert(self._modifiedImg[Page_p])
 		if self._grayscaleImg:
@@ -190,6 +195,57 @@ class OCRpdf(Gtk.Window):
 			print("save transformed image:/tmp/ocrTransformed" + str(Page_p) + ".png")			
 		return True
 
+	def _OCRPages(self, ID):
+		if self._debug:
+			print("start thread " + str(ID))
+		while( self._currPageNo < self._pageNo):
+			self._currPageNo = self._currPageNo + 1
+			if self._debug:
+				print('Page:' +  str(self._currPageNo - 1))
+			self._scaleImg(self._currPageNo - 1)
+			self._transformImg(self._currPageNo - 1)
+			self._ocrImage(self._currPageNo - 1)
+		self._currNoOfOCRThreads = self._currNoOfOCRThreads -1
+		if (self._currNoOfOCRThreads == 0):
+			self._OCRThreadsFinished = True
+			if self._debug:
+				print("finish last thread " + str(ID))
+		elif self._debug:
+			print("finish thread " + str(ID))
+
+	def _proceedPages(self):
+		self._OCRWords = []
+		self._OCRWordList = []
+		self._OCRText = []		
+		for i in range(self._pageNo):	
+			self._OCRText.append('')
+			self._OCRWords.append('')
+		self._scrolledWindowTree = None
+		self._scrolledWindowText = None
+		self._textbox = None
+		self._fileText = ''
+		self._OCRThreadsFinished = False
+		while( (self._currNoOfOCRThreads < self._maxNoOfOCRThreads) and
+		  (self._currNoOfOCRThreads < self._pageNo)):
+			if self._debug:
+				print("threadloop: " + str(self._currNoOfOCRThreads))
+			self._currNoOfOCRThreads += 1
+			_thread.start_new_thread( self._OCRPages,(self._currNoOfOCRThreads,) )
+			time.sleep(3)
+			
+		while(not self._OCRThreadsFinished):
+			time.sleep(0.3)
+
+		for i in range(self._pageNo):
+			self._fillOCRWordlist(i)
+			if (i > 0):
+				self._fileText += '\n'
+			self._fileText += '---Page ' + str(i + 1) + '---\n'
+			self._fileText = self._fileText + self._OCRText[i]
+			
+		if self._sendToClipboard:
+			self._setTextToClipboard( self._fileText)
+
 	def _refreshContent(self):
 		if self._isRefreshing == True:
 			print("refresh already running")
@@ -198,26 +254,9 @@ class OCRpdf(Gtk.Window):
 		if self._debug:
 			print("refresh")
 		self._tree = None
-		self._OCRWords = []
-		self._OCRWordList = []
-		self._OCRText = []		
-		for i in range(self._pageNo):	
-			self._OCRWordList.append('')
-			self._OCRText.append('')
-			self._OCRWords.append('')
-		self._scrolledWindowTree = None
-		self._scrolledWindowText = None
-		self._textbox = None
-		self._fileText = ''
-		for i in range(self._pageNo):
-			if self._debug:
-				print('Page:' +  str(i))
-			self._transformImg(i)
-			self._ocrImage(i)
-			self._fileText = self._fileText + self._OCRText[i]
-			
-		if self._sendToClipboard:
-			self._setTextToClipboard( self._fileText)
+		
+		self._proceedPages()
+		
 		self._scrolledWindowText = Gtk.ScrolledWindow()
 
 		self._textbox = Gtk.TextView()
@@ -436,7 +475,7 @@ class OCRpdf(Gtk.Window):
 			GTKmainIsRunning = False
 
 	def _onSetTextToClipboard(self, widget):
-		self._setTextToClipboard(self._OCRText)
+		self._setTextToClipboard(self._fileText)
 
 	def _setTextToClipboard(self, text_p):
 		if self._debug:
@@ -474,6 +513,7 @@ class OCRreader():
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
 		self._file = ''
+		self._maxNoOfOCRThreads = 4
 		self._setCommandLineOptions()
 
 		if self._showHelp:
@@ -488,17 +528,18 @@ class OCRreader():
 		self._Navigation._setBlackWhiteImgValue(self._blackWhiteImgValue)
 		self._Navigation._setSendToClipboard(self._sendToClipboard)
 		self._Navigation._setHideGui(self._hideGui)
+		self._Navigation._setMaxNoOfOCRThreads(self._maxNoOfOCRThreads)
 		
 		if self._Navigation._openPDF():
 			if not self._hideGui:
 				self._Navigation.showGUI()
 			else:
-				self._Navigation._ocrImage()
+				self._Navigation._proceedPages()
 
 		#FUNCTIONS
 	def _setCommandLineOptions(self):
 		try:
-			myopts, args = getopt.getopt(sys.argv[1:],"hl:vncgibt:f:")
+			myopts, args = getopt.getopt(sys.argv[1:],"hl:vncgj:ibt:f:")
 			###############################
 			# o == option
 			# a == argument passed to the o
@@ -520,6 +561,8 @@ class OCRreader():
 					self._sendToClipboard = True
 				elif o == '-f':
 					self._file = a
+				elif o == '-j':
+					self._maxNoOfOCRThreads = int(a)
 				elif o == '-l':
 					self._languageCode = a
 				elif o == '-n':
@@ -531,7 +574,7 @@ class OCRreader():
 
 	def _printHelp(self):
 		print(__version__)
-		print("ocrdesktop -f <filename> -h -l -n -c -i -g -b -t")
+		print("ocrdesktop -f <filename> -h -l -n -c -i -j -g -b -t")
 		print("-h		Print help with start")
 		print("-f <fil> Inputfile for OCR process")
 		print("-l <lang>        set the OCR language default=eng")
@@ -539,6 +582,7 @@ class OCRreader():
 		print("-v		print debug messages")
 		print("-c		Send to Clipboard")
 		print("-i       Invert the picture colors")
+		print("-j <Threads>      Number of worker threads default=4")
 		print("-g       Grayscale picture")
 		print("-b       break into hard black and white")
 		print("-t       the value for braking into black and white (-b) 0 (black) - 255 (white)")
