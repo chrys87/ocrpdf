@@ -4,7 +4,7 @@
 
 """OCRpdf"""
 
-__version__   = "0.2.0"
+__version__   = "0.3.0"
 __copyright__ = "Copyright (c) 2015 Chrys"
 __license__   = "GPL"
 __authors__   = ["chrys"]
@@ -12,8 +12,9 @@ __website__   = "https://github.com/chrys87/ocrpdf"
 __appname__   = "OCRpdf"
 __comments__  = "A accessibility tool for easy read a non OCR PDF"
 #Python Utils
-import os, sys, getopt, locale, re, time, _thread
-
+import os, sys, getopt, locale, re, time
+from _thread import start_new_thread, allocate_lock
+ 
 #PDF stuff
 from PyPDF2 import PdfFileReader
 import PythonMagick
@@ -33,6 +34,22 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gtk, Gdk, GObject, Wnck
+
+
+'''
+class myThread (threading.Thread):
+	def __init__(self, threadID, oCRpdf_p):
+		threading.Thread.__init__(self)
+		self.threadID = threadID
+		self.oCRpdf = oCRpdf_p
+	def run(self):
+		print "Starting " + self.name
+		# Get lock to synchronize threads
+		threadLock.acquire()
+        print_time(self.name, self.counter, 3)
+		# Free lock to release next thread
+		threadLock.release()
+'''
 
 # here the class
 class OCRpdf(Gtk.Window):
@@ -73,6 +90,7 @@ class OCRpdf(Gtk.Window):
 		self._languageCode = 'eng'
 		self._tess = None
 		self._isRefreshing = False
+		self.lock = allocate_lock()
 		
 	def _setHideGui(self, hideGui_p = False):
 		self.hideGui = hideGui_p
@@ -199,12 +217,16 @@ class OCRpdf(Gtk.Window):
 		if self._debug:
 			print("start thread " + str(ID))
 		while( self._currPageNo < self._pageNo):
-			self._currPageNo = self._currPageNo + 1
+			self.lock.acquire(1)
+			self._currPageNo += 1
+			curPageNo = self._currPageNo
+			self.lock.release()
 			if self._debug:
-				print('Page:' +  str(self._currPageNo - 1))
-			self._scaleImg(self._currPageNo - 1)
-			self._transformImg(self._currPageNo - 1)
-			self._ocrImage(self._currPageNo - 1)
+				print('Page:' +  str(curPageNo - 1))
+			self._scaleImg(curPageNo - 1)
+			self._transformImg(curPageNo - 1)
+			self._ocrImage(curPageNo - 1)
+		self.lock.acquire(0)
 		self._currNoOfOCRThreads = self._currNoOfOCRThreads -1
 		if (self._currNoOfOCRThreads == 0):
 			self._OCRThreadsFinished = True
@@ -212,6 +234,7 @@ class OCRpdf(Gtk.Window):
 				print("finish last thread " + str(ID))
 		elif self._debug:
 			print("finish thread " + str(ID))
+		self.lock.release()
 
 	def _proceedPages(self):
 		self._OCRWords = []
@@ -230,8 +253,7 @@ class OCRpdf(Gtk.Window):
 			if self._debug:
 				print("threadloop: " + str(self._currNoOfOCRThreads))
 			self._currNoOfOCRThreads += 1
-			_thread.start_new_thread( self._OCRPages,(self._currNoOfOCRThreads,) )
-			time.sleep(3)
+			start_new_thread( self._OCRPages,(self._currNoOfOCRThreads,) )
 			
 		while(not self._OCRThreadsFinished):
 			time.sleep(0.3)
