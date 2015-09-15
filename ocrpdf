@@ -35,22 +35,6 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gtk, Gdk, GObject, Wnck
 
-
-'''
-class myThread (threading.Thread):
-	def __init__(self, threadID, oCRpdf_p):
-		threading.Thread.__init__(self)
-		self.threadID = threadID
-		self.oCRpdf = oCRpdf_p
-	def run(self):
-		print "Starting " + self.name
-		# Get lock to synchronize threads
-		threadLock.acquire()
-        print_time(self.name, self.counter, 3)
-		# Free lock to release next thread
-		threadLock.release()
-'''
-
 # here the class
 class OCRpdf(Gtk.Window):
 	def __init__(self, file_p = '',debug_p = False):
