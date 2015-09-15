@@ -17,8 +17,7 @@ import os, sys, getopt, locale, re
 #PDF stuff
 from PyPDF2 import PdfFileReader
 import PythonMagick
-from PythonMagick import Image as PMImage #distinguish between PIL and PythonMagick 'Image' object
-from PythonMagick import Blob
+from PythonMagick import Image as PMImage
 
 #PIL
 from PIL import Image
@@ -37,7 +36,7 @@ from gi.repository import Gtk, Gdk, GObject, Wnck
 
 # here the class
 class OCRpdf(Gtk.Window):
-	def __init__(self, debug_p = False):
+	def __init__(self, file_p = '',debug_p = False):
 		self._debug = debug_p
 		self._tree = None
 		self._textbox = None
@@ -52,21 +51,20 @@ class OCRpdf(Gtk.Window):
 		self._menubar = None
 		self._font_button = None
 		self._accelerators = None
-		self._OCRWords = None		
+		self._OCRWords = []		
 		self._OCRWordList = []
-		self._OCRText = ''
-		self._file = None
-		self._fileName = '/home/chrys/Projekte/ocrpdf/source/ocrpdf/schufa.pdf'
+		self._OCRText = []
+		self._fileText = ''
+		self._file = file_p
 		self._img = []
 		self._modifiedImg = []
 		self._pageNo = 0
+		self._currPageNo = 0
 		self._grayscaleImg = False
 		self._invertImg = False
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
-		self._scaleFactor = 4
-		self._offsetXpos = 0
-		self._offsetYpos = 0
+		self._scaleFactor = 3
 		self.GTKmainIsRunning = False
 		locale.setlocale(locale.LC_NUMERIC, 'C') #needed by tesseract in non english languages 
 		self._languageCode = 'eng'
@@ -101,16 +99,23 @@ class OCRpdf(Gtk.Window):
 		return pilimage
 
 	def _openPDF(self):
-		if self._fileName == '':
+		if self._file == '':
 			return False
 		
-		self._file = PdfFileReader(open(self._fileName, "rb"))
-		self._pageNo = self._file.numPages
-		print(self._file.numPages)
+		Reader = PdfFileReader(open(self._file, "rb"))
+		self._pageNo = Reader.numPages
+		if self._debug:
+			print(self._pageNo)
+		
 		for i in range(self._pageNo):
-			im = self.convertMGtoPIL(PythonMagick.Image(self._fileName+'['+ str(i) +']'))
-			im.save("/tmp/page"+str(i)+".png")
+			mgImg = PythonMagick.Image()
+			mgImg.density("300")
+			mgImg.read(self._file+'['+ str(i) +']')
+			im = self.convertMGtoPIL(mgImg)
 			self._img.append(im)
+			if self._debug: # Debug code
+				print("save page: /tmp/page"+str(i)+".png")
+				self._img[i].save("/tmp/page"+str(i)+".png")
 			#self._img.append(self._file.getPage(i))
 			self._scaleImg(i)
 		return True 
@@ -121,43 +126,39 @@ class OCRpdf(Gtk.Window):
 		height_screen = height_screen * self._scaleFactor
 		self._img[Page_p] = self._img[Page_p].resize( (width_screen, height_screen), Image.BICUBIC)
 		if self._debug: # Debug code
-			self._img.save("/tmp/ocrScaled.png")
-			print("save scaled screenshot:/tmp/ocrScaled.png")
+			self._img[Page_p].save("/tmp/ocrScaled" + str(Page_p) + ".png")
+			print("save scaled image:/tmp/ocrScaled" + str(Page_p) + ".png")
 
 	def _ocrImage(self, Page_p):
 		if self._modifiedImg[Page_p] is None:
 			return False
 		self._tess = tesseract("/usr/share", self._languageCode)
-				
-		self._OCRText = self._tess.ocr_image(self._modifiedImg[Page_p])
+		if self._debug: # Debug code
+			print("OCR Page:"+str(Page_p))			
+		self._OCRText[Page_p] = self._tess.ocr_image(self._modifiedImg[Page_p])
 		regexSpace = re.compile('[^\S\r\n]{2,}') #remove double spaces
-		self._OCRText = regexSpace.sub(' ',self._OCRText)
+		self._OCRText[Page_p] = regexSpace.sub(' ',self._OCRText[Page_p])
 		regexSpace = re.compile('\n\s*\n') #remove empty lines
-		self._OCRText = regexSpace.sub('\n',self._OCRText)
+		self._OCRText[Page_p] = regexSpace.sub('\n',self._OCRText[Page_p])
 		regexSpace = re.compile('\s*\n') #remove ending spaces
-		self._OCRText = regexSpace.sub('\n',self._OCRText)
+		self._OCRText[Page_p] = regexSpace.sub('\n',self._OCRText[Page_p])
 		regexSpace = re.compile('\n\s') #remove trailing spaces
-		self._OCRText = regexSpace.sub( '\n', self._OCRText)
+		self._OCRText[Page_p] = regexSpace.sub( '\n', self._OCRText[Page_p])
 		regexSpace = re.compile('^\s') #remove trailing space in first line
-		self._OCRText = regexSpace.sub( '\n', self._OCRText)
+		self._OCRText[Page_p] = regexSpace.sub( '\n', self._OCRText[Page_p])
 		regexSpace = re.compile('$\n') #remove ending newline
-		self._OCRText = regexSpace.sub( '', self._OCRText)
-		if self._sendToClipboard:
-			self._setTextToClipboard( self._OCRText)
-		if not self._hideGui:
-			self._OCRWords = self._tess.get_words()
-			self._fillOCRWordlist()
+		self._OCRText[Page_p] = regexSpace.sub( '', self._OCRText[Page_p])
+		self._OCRWords[Page_p] = self._tess.get_words()
+		self._fillOCRWordlist(Page_p)
 		return True
 
-	def _fillOCRWordlist(self):
-		for OCRWord in self._OCRWords: # fill the list
+	def _fillOCRWordlist(self,Page_p):
+		for OCRWord in self._OCRWords[Page_p]: # fill the list
 			if int(OCRWord.confidence) != 0:
 				self._OCRWordList.append([OCRWord.value.decode("utf-8"),
 				  round((OCRWord.box[3] - OCRWord.box[1]) / 3 * 0.78,0),
 				  'unknown',
 				  'text',
-				  int((OCRWord.box[2] - OCRWord.box[0]) / 2 + OCRWord.box[0]),
-				  int((OCRWord.box[3] - OCRWord.box[1]) / 2 + OCRWord.box[1]),
 				  int(OCRWord.confidence)])
 
 	def add_accelerator(self, widget, accelerator, signal="activate"):
@@ -185,8 +186,8 @@ class OCRpdf(Gtk.Window):
 			lut = [255 if v > self._blackWhiteImgValue else 0 for v in range(256)]
 			self._modifiedImg[Page_p] = self._modifiedImg[Page_p].point(lut)
 		if self._debug: # Debug code
-			self._modifiedImg[Page_p].save("/tmp/ocrTransformed.png")
-			print("save scaled screenshot:/tmp/ocrTransformed.png")			
+			self._modifiedImg[Page_p].save("/tmp/ocrTransformed" + str(Page_p) + ".png")
+			print("save transformed image:/tmp/ocrTransformed" + str(Page_p) + ".png")			
 		return True
 
 	def _refreshContent(self):
@@ -197,17 +198,26 @@ class OCRpdf(Gtk.Window):
 		if self._debug:
 			print("refresh")
 		self._tree = None
-		self._OCRWords = None		
+		self._OCRWords = []
 		self._OCRWordList = []
-		self._OCRText = ''
+		self._OCRText = []		
+		for i in range(self._pageNo):	
+			self._OCRWordList.append('')
+			self._OCRText.append('')
+			self._OCRWords.append('')
 		self._scrolledWindowTree = None
 		self._scrolledWindowText = None
 		self._textbox = None
+		self._fileText = ''
 		for i in range(self._pageNo):
-			print(i)
+			if self._debug:
+				print('Page:' +  str(i))
 			self._transformImg(i)
 			self._ocrImage(i)
-
+			self._fileText = self._fileText + self._OCRText[i]
+			
+		if self._sendToClipboard:
+			self._setTextToClipboard( self._fileText)
 		self._scrolledWindowText = Gtk.ScrolledWindow()
 
 		self._textbox = Gtk.TextView()
@@ -215,7 +225,7 @@ class OCRpdf(Gtk.Window):
 		self._textbox.set_vexpand(True)
 		self._textbox.show()
 		self._textbuffer = self._textbox.get_buffer()
-		#self._textbuffer.set_text(self._textbuffer.get_text() + '\n' + self._OCRText)
+		self._textbuffer.set_text(self._fileText)
 		self._textbox.set_editable(False)
 		if not self._textbuffer.get_start_iter() is None:
 			self._textbuffer.place_cursor(self._textbuffer.get_start_iter())
@@ -234,11 +244,9 @@ class OCRpdf(Gtk.Window):
 		cols.extend([GObject.TYPE_STRING])
 		cols.extend([GObject.TYPE_STRING])
 		cols.extend([GObject.TYPE_INT])		
-		cols.extend([GObject.TYPE_INT])
-		cols.extend([GObject.TYPE_INT])
 		model = Gtk.ListStore(*cols)
 		self._tree.set_model(model)
-		columnHeaders = ['OCR Text','Fontsize','Color','Object','X Position','Y Position','Confidence']
+		columnHeaders = ['OCR Text','Fontsize','Color','Object','Confidence']
 		
 		cell = Gtk.CellRendererText()
 		column = Gtk.TreeViewColumn("OCR Text", cell, text=0)
@@ -257,10 +265,6 @@ class OCRpdf(Gtk.Window):
 			i = 0
 			for cell in row:
 				i = i + 1
-				if i == 5:
-					cell = cell / self._scaleFactor + self._offsetXpos
-				if i == 6:
-					cell = cell / self._scaleFactor + self._offsetYpos
 				model.set_value(rowIter, i, cell)
 
 		self._tree.set_search_column(1)
@@ -469,13 +473,14 @@ class OCRreader():
 		self._invertImg = False
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
+		self._file = ''
 		self._setCommandLineOptions()
 
 		if self._showHelp:
 			return
 
 		#NAVIGATION
-		self._Navigation = OCRpdf(self._debug)
+		self._Navigation = OCRpdf(self._file,self._debug)
 		self._Navigation._setlanguageCode(self._languageCode)
 		self._Navigation._setGrayscaleImg(self._grayscaleImg)
 		self._Navigation._setInvertImg(self._invertImg)
@@ -493,7 +498,7 @@ class OCRreader():
 		#FUNCTIONS
 	def _setCommandLineOptions(self):
 		try:
-			myopts, args = getopt.getopt(sys.argv[1:],"hl:vndcgibt:m:")
+			myopts, args = getopt.getopt(sys.argv[1:],"hl:vncgibt:f:")
 			###############################
 			# o == option
 			# a == argument passed to the o
@@ -513,6 +518,8 @@ class OCRreader():
 					self._blackWhiteImgValue = int(a)
 				elif o == '-c':
 					self._sendToClipboard = True
+				elif o == '-f':
+					self._file = a
 				elif o == '-l':
 					self._languageCode = a
 				elif o == '-n':
@@ -524,10 +531,11 @@ class OCRreader():
 
 	def _printHelp(self):
 		print(__version__)
-		print("ocrdesktop -h -l -n -c -i -g -b -t")
+		print("ocrdesktop -f <filename> -h -l -n -c -i -g -b -t")
 		print("-h		Print help with start")
+		print("-f <fil> Inputfile for OCR process")
 		print("-l <lang>        set the OCR language default=eng")
-		print("-n		hide GUI  (use with -c or -m")
+		print("-n		hide GUI  (use with -c")
 		print("-v		print debug messages")
 		print("-c		Send to Clipboard")
 		print("-i       Invert the picture colors")
