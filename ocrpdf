@@ -4,21 +4,21 @@
 
 """OCRpdf"""
 
-__version__   = "0.5.0"
+__version__   = "0.6.0"
 __copyright__ = "Copyright (c) 2015 Chrys"
 __license__   = "GPL"
 __authors__   = ["chrys"]
 __website__   = "https://github.com/chrys87/ocrpdf"
 __appname__   = "OCRpdf"
 __comments__  = "A accessibility tool for easy read a non OCR PDF"
+
 #Python Utils
 import os, sys, getopt, locale, re, time
 from _thread import start_new_thread, allocate_lock
- 
+from mimetypes import MimeTypes
+
 #PDF stuff
-from PyPDF2 import PdfFileReader
 import PythonMagick
-from PythonMagick import Image as PMImage
 
 #PIL
 from PIL import Image
@@ -107,24 +107,30 @@ class OCRpdf(Gtk.Window):
 
 		return pilimage
 
-	def _openPDF(self):
+	def _readFile(self):
 		if self._file == '':
 			return False
+		mime = MimeTypes()
+		mime_type = mime.guess_type(self._file)
 		
-		Reader = PdfFileReader(open(self._file, "rb"))
-		self._pageNo = Reader.numPages
+		mgImg = PythonMagick.Image()
+		mgImg.density("300")		
+		pageFound = True
+		while (pageFound): # as long as there pages
+			try:
+				mgImg.read(self._file+'['+ str(self._pageNo) + ']')
+				self._img.append(self.convertMGtoPIL(mgImg))
+				self._modifiedImg.append(self._img[self._pageNo])
+				if self._debug: # Debug code
+					print("save page: /tmp/page"+str(self._pageNo)+".png")
+					self._img[self._pageNo].save("/tmp/page"+str(self._pageNo)+".png")
+				self._pageNo += 1
+				if (mime_type[0]) != 'application/pdf': # not multipage
+					pageFound = False				
+			except:
+				pageFound = False
 		if self._debug:
 			print("No of Pages: " + str(self._pageNo))
-		
-		for i in range(self._pageNo):
-			mgImg = PythonMagick.Image()
-			mgImg.density("300")
-			mgImg.read(self._file+'['+ str(i) +']')
-			self._img.append(self.convertMGtoPIL(mgImg))
-			self._modifiedImg.append(self._img[i])	
-			if self._debug: # Debug code
-				print("save page: /tmp/page"+str(i)+".png")
-				self._img[i].save("/tmp/page"+str(i)+".png")
 
 		return True 
 
@@ -546,7 +552,7 @@ class OCRreader():
 		self._Navigation._setHideGui(self._hideGui)
 		self._Navigation._setMaxNoOfOCRThreads(self._maxNoOfOCRThreads)
 		
-		if self._Navigation._openPDF():
+		if self._Navigation._readFile():
 			if not self._hideGui:
 				self._Navigation.showGUI()
 			else:
