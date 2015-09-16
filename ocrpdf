@@ -4,7 +4,7 @@
 
 """OCRpdf"""
 
-__version__   = "0.4.0"
+__version__   = "0.5.0"
 __copyright__ = "Copyright (c) 2015 Chrys"
 __license__   = "GPL"
 __authors__   = ["chrys"]
@@ -65,7 +65,7 @@ class OCRpdf(Gtk.Window):
 		self._invertImg = False
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
-		self._scaleFactor = 2
+		self._scaleFactor = 1
 		self._maxNoOfOCRThreads = 2
 		self._currNoOfOCRThreads = 0
 		self._OCRThreadsFinished = False
@@ -129,6 +129,11 @@ class OCRpdf(Gtk.Window):
 		return True 
 
 	def _scaleImg(self, Page_p):
+		if self._scaleFactor == 1:
+			if self._debug:
+			    print("no scaling needed")
+			self._modifiedImg[Page_p] = self._img[Page_p]
+			return
 		width_screen, height_screen = self._img[Page_p].size
 		width_screen =  width_screen * self._scaleFactor
 		height_screen = height_screen * self._scaleFactor
@@ -225,7 +230,8 @@ class OCRpdf(Gtk.Window):
 	def _proceedPages(self):
 		self._OCRWords = []
 		self._OCRWordList = []
-		self._OCRText = []		
+		self._OCRText = []
+		self._OCRThreadsFinished = False		
 		for i in range(self._pageNo):	
 			self._OCRText.append('')
 			self._OCRWords.append('')
