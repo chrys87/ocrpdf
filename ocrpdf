@@ -126,7 +126,8 @@ class OCRpdf(Gtk.Window):
 					self._img[self._pageNo].save("/tmp/page"+str(self._pageNo)+".png")
 				self._pageNo += 1
 				if (mime_type[0]) != 'application/pdf': # not multipage
-					pageFound = False				
+					pageFound = False
+					self._scaleFactor = 3				
 			except:
 				pageFound = False
 		if self._debug:
@@ -224,7 +225,7 @@ class OCRpdf(Gtk.Window):
 			self._transformImg(curPageNo - 1)
 			self._ocrImage(curPageNo - 1)
 		self.lock.acquire(True)
-		self._currNoOfOCRThreads = self._currNoOfOCRThreads -1
+		self._currNoOfOCRThreads -= 1
 		if (self._currNoOfOCRThreads == 0):
 			self._OCRThreadsFinished = True
 			if self._debug:
@@ -237,7 +238,8 @@ class OCRpdf(Gtk.Window):
 		self._OCRWords = []
 		self._OCRWordList = []
 		self._OCRText = []
-		self._OCRThreadsFinished = False		
+		self._OCRThreadsFinished = False
+		self._currPageNo = 0		
 		for i in range(self._pageNo):	
 			self._OCRText.append('')
 			self._OCRWords.append('')
@@ -245,7 +247,6 @@ class OCRpdf(Gtk.Window):
 		self._scrolledWindowText = None
 		self._textbox = None
 		self._fileText = ''
-		self._OCRThreadsFinished = False
 		while( (self._currNoOfOCRThreads < self._maxNoOfOCRThreads) and
 		  (self._currNoOfOCRThreads < self._pageNo)):
 			self.lock.acquire(True)
