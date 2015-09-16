@@ -4,7 +4,7 @@
 
 """OCRpdf"""
 
-__version__   = "0.3.0"
+__version__   = "0.4.0"
 __copyright__ = "Copyright (c) 2015 Chrys"
 __license__   = "GPL"
 __authors__   = ["chrys"]
@@ -65,7 +65,7 @@ class OCRpdf(Gtk.Window):
 		self._invertImg = False
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
-		self._scaleFactor = 3
+		self._scaleFactor = 2
 		self._maxNoOfOCRThreads = 2
 		self._currNoOfOCRThreads = 0
 		self._OCRThreadsFinished = False
@@ -101,9 +101,10 @@ class OCRpdf(Gtk.Window):
 		self._sendToClipboard = sendToClipboard_p
 
 	def convertMGtoPIL(self, magickimage):
-		img = PMImage(magickimage)  # make copy
-		img.write("/tmp/page.png")
-		pilimage = Image.open("/tmp/page.png")
+		magickimage.write("/tmp/page.jpg")
+		pilimage = Image.open("/tmp/page.jpg")
+		pilimage.save("/tmp/page.jpg") # strange... why i need this? without an IOerror rises
+
 		return pilimage
 
 	def _openPDF(self):
@@ -120,17 +121,18 @@ class OCRpdf(Gtk.Window):
 			mgImg.density("300")
 			mgImg.read(self._file+'['+ str(i) +']')
 			self._img.append(self.convertMGtoPIL(mgImg))
+			self._modifiedImg.append(self._img[i])	
 			if self._debug: # Debug code
 				print("save page: /tmp/page"+str(i)+".png")
 				self._img[i].save("/tmp/page"+str(i)+".png")
-			self._modifiedImg.append(self._img[i])
+
 		return True 
 
 	def _scaleImg(self, Page_p):
 		width_screen, height_screen = self._img[Page_p].size
 		width_screen =  width_screen * self._scaleFactor
 		height_screen = height_screen * self._scaleFactor
-		self._img[Page_p] = self._img[Page_p].resize( (width_screen, height_screen), Image.BICUBIC)
+		self._modifiedImg[Page_p] = self._img[Page_p].resize( (width_screen, height_screen), Image.BICUBIC)
 		if self._debug: # Debug code
 			self._img[Page_p].save("/tmp/ocrScaled" + str(Page_p) + ".png")
 			print("save scaled image:/tmp/ocrScaled" + str(Page_p) + ".png")
@@ -183,7 +185,7 @@ class OCRpdf(Gtk.Window):
 		self._refreshContent()
 	
 	def _transformImg(self, Page_p):
-		if self._img[Page_p] == None:
+		if self._modifiedImg[Page_p] == None:
 			return False
 		if self._invertImg:
 			self._modifiedImg[Page_p] = ImageOps.invert(self._modifiedImg[Page_p])
@@ -201,7 +203,7 @@ class OCRpdf(Gtk.Window):
 		if self._debug:
 			print("start thread " + str(ID))
 		while( self._currPageNo < self._pageNo):
-			self.lock.acquire(1)
+			self.lock.acquire(True)
 			self._currPageNo += 1
 			curPageNo = self._currPageNo
 			self.lock.release()
@@ -210,7 +212,7 @@ class OCRpdf(Gtk.Window):
 			self._scaleImg(curPageNo - 1)
 			self._transformImg(curPageNo - 1)
 			self._ocrImage(curPageNo - 1)
-		self.lock.acquire(0)
+		self.lock.acquire(True)
 		self._currNoOfOCRThreads = self._currNoOfOCRThreads -1
 		if (self._currNoOfOCRThreads == 0):
 			self._OCRThreadsFinished = True
@@ -234,9 +236,11 @@ class OCRpdf(Gtk.Window):
 		self._OCRThreadsFinished = False
 		while( (self._currNoOfOCRThreads < self._maxNoOfOCRThreads) and
 		  (self._currNoOfOCRThreads < self._pageNo)):
+			self.lock.acquire(True)
+			self._currNoOfOCRThreads += 1
+			self.lock.release()			
 			if self._debug:
 				print("threadloop: " + str(self._currNoOfOCRThreads))
-			self._currNoOfOCRThreads += 1
 			start_new_thread( self._OCRPages,(self._currNoOfOCRThreads,) )
 			
 		while(not self._OCRThreadsFinished):
