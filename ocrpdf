@@ -26,6 +26,7 @@ from PIL import ImageOps
 
 #tesseract
 from tesserwrap import tesseract
+import tesserwrap
 
 #gi
 import gi
@@ -70,6 +71,12 @@ class OCRpdf(Gtk.Window):
 		self._currNoOfOCRThreads = 0
 		self._OCRThreadsFinished = False
 		self.GTKmainIsRunning = False
+		self.regexDoubleSpaces = re.compile('[^\S\r\n]{2,}') #remove double spaces
+		self.regexEmptyLines = re.compile('\n\s*\n') #remove empty lines
+		self.regexEndingSpaces = re.compile('\s*\n') #remove ending spaces
+		self.regexTrailingSpacesFirstLine = re.compile('\n\s') #remove trailing spaces
+		self.regexTrailingSpaces = re.compile('^\s') #remove trailing space in first line
+		self.regexEndingSpaces = re.compile('$\n') #remove ending newline
 		locale.setlocale(locale.LC_NUMERIC, 'C') #needed by tesseract in non english languages 
 		self._languageCode = 'eng'
 		self._tess = None
@@ -153,21 +160,16 @@ class OCRpdf(Gtk.Window):
 		if self._modifiedImg[Page_p] is None:
 			return False
 		tess = tesseract("/usr/share", self._languageCode)
+		tess.set_page_seg_mode(tesserwrap.PageSegMode.PSM_AUTO )
 		if self._debug: # Debug code
 			print("OCR Page:"+str(Page_p))			
 		self._OCRText[Page_p] = tess.ocr_image(self._modifiedImg[Page_p])
-		regexSpace = re.compile('[^\S\r\n]{2,}') #remove double spaces
-		self._OCRText[Page_p] = regexSpace.sub(' ',self._OCRText[Page_p])
-		regexSpace = re.compile('\n\s*\n') #remove empty lines
-		self._OCRText[Page_p] = regexSpace.sub('\n',self._OCRText[Page_p])
-		regexSpace = re.compile('\s*\n') #remove ending spaces
-		self._OCRText[Page_p] = regexSpace.sub('\n',self._OCRText[Page_p])
-		regexSpace = re.compile('\n\s') #remove trailing spaces
-		self._OCRText[Page_p] = regexSpace.sub( '\n', self._OCRText[Page_p])
-		regexSpace = re.compile('^\s') #remove trailing space in first line
-		self._OCRText[Page_p] = regexSpace.sub( '\n', self._OCRText[Page_p])
-		regexSpace = re.compile('$\n') #remove ending newline
-		self._OCRText[Page_p] = regexSpace.sub( '', self._OCRText[Page_p])
+		self._OCRText[Page_p] = self.regexDoubleSpaces.sub(' ',self._OCRText[Page_p])
+		self._OCRText[Page_p] = self.regexEmptyLines.sub('\n',self._OCRText[Page_p])
+		self._OCRText[Page_p] = self.regexEndingSpaces.sub('\n',self._OCRText[Page_p])
+		self._OCRText[Page_p] = self.regexTrailingSpacesFirstLine.sub( '\n', self._OCRText[Page_p])
+		self._OCRText[Page_p] = self.regexTrailingSpaces.sub( '\n', self._OCRText[Page_p])
+		self._OCRText[Page_p] = self.regexEndingSpaces.sub( '', self._OCRText[Page_p])
 		self._OCRWords[Page_p] = tess.get_words()
 		return True
 
