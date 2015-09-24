@@ -140,8 +140,6 @@ class OCRpdf(Gtk.Window):
 		if self._debug:
 			print("No of Pages: " + str(self._pageNo))
 
-		return True 
-
 	def _scaleImg(self, Page_p):
 		if self._scaleFactor == 1:
 			if self._debug:
