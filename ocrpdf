@@ -4,7 +4,7 @@
 
 """OCRpdf"""
 
-__version__   = "0.6.0"
+__version__   = "0.8.0"
 __copyright__ = "Copyright (c) 2015 Chrys"
 __license__   = "GPL"
 __authors__   = ["chrys"]
@@ -59,7 +59,6 @@ class OCRpdf(Gtk.Window):
 		self._fileText = ''
 		self._file = file_p
 		self._img = []
-		self._modifiedImg = []
 		self._pageNo = 0
 		self._currPageNo = 0
 		self._grayscaleImg = False
@@ -108,9 +107,9 @@ class OCRpdf(Gtk.Window):
 		self._sendToClipboard = sendToClipboard_p
 
 	def convertMGtoPIL(self, magickimage):
-		magickimage.write("/tmp/page.jpg")
-		pilimage = Image.open("/tmp/page.jpg")
-		pilimage.save("/tmp/page.jpg") # strange... why i need this? without an IOerror rises
+		magickimage.write("/tmp/ocrfilepage.jpg")
+		pilimage = Image.open("/tmp/ocrfilepage.jpg")
+		pilimage.save("/tmp/ocrfilepage.jpg") # strange... why i need this? without an IOerror rises
 
 		return pilimage
 
@@ -127,41 +126,41 @@ class OCRpdf(Gtk.Window):
 			try:
 				mgImg.read(self._file+'['+ str(self._pageNo) + ']')
 				self._img.append(self.convertMGtoPIL(mgImg))
-				self._modifiedImg.append(self._img[self._pageNo])
 				if self._debug: # Debug code
 					print("save page: /tmp/page"+str(self._pageNo)+".png")
 					self._img[self._pageNo].save("/tmp/page"+str(self._pageNo)+".png")
 				self._pageNo += 1
-				if (mime_type[0]) != 'application/pdf': # not multipage
+				if (mime_type[0]) != 'application/pdf': # not pdf
 					pageFound = False
 					self._scaleFactor = 3				
 			except:
 				pageFound = False
 		if self._debug:
 			print("No of Pages: " + str(self._pageNo))
-
-	def _scaleImg(self, Page_p):
+		return True
+		
+	def _scaleImg(self, Img_p, Page_p):
 		if self._scaleFactor == 1:
 			if self._debug:
 			    print("no scaling needed")
-			self._modifiedImg[Page_p] = self._img[Page_p]
-			return
-		width_screen, height_screen = self._img[Page_p].size
+			return Img_p
+		width_screen, height_screen = Img_p.size
 		width_screen =  width_screen * self._scaleFactor
 		height_screen = height_screen * self._scaleFactor
-		self._modifiedImg[Page_p] = self._img[Page_p].resize( (width_screen, height_screen), Image.BICUBIC)
+		scaledImg = Img_p.resize( (width_screen, height_screen), Image.BICUBIC)
 		if self._debug: # Debug code
-			self._img[Page_p].save("/tmp/ocrScaled" + str(Page_p) + ".png")
+			Img_p.save("/tmp/ocrScaled" + str(Page_p) + ".png")
 			print("save scaled image:/tmp/ocrScaled" + str(Page_p) + ".png")
-
-	def _ocrImage(self, Page_p):
-		if self._modifiedImg[Page_p] is None:
+		return scaledImg
+		
+	def _ocrImage(self, Img_p, Page_p):
+		if Img_p is None:
 			return False
 		tess = tesseract("/usr/share", self._languageCode)
 		tess.set_page_seg_mode(tesserwrap.PageSegMode.PSM_AUTO )
 		if self._debug: # Debug code
 			print("OCR Page:"+str(Page_p))			
-		self._OCRText[Page_p] = tess.ocr_image(self._modifiedImg[Page_p])
+		self._OCRText[Page_p] = tess.ocr_image(Img_p)
 		self._OCRText[Page_p] = self.regexDoubleSpaces.sub(' ',self._OCRText[Page_p])
 		self._OCRText[Page_p] = self.regexEmptyLines.sub('\n',self._OCRText[Page_p])
 		self._OCRText[Page_p] = self.regexEndingSpaces.sub('\n',self._OCRText[Page_p])
@@ -196,21 +195,24 @@ class OCRpdf(Gtk.Window):
 	def _onRefreshContent(self, widget):
 		self._refreshContent()
 	
-	def _transformImg(self, Page_p):
-		if self._modifiedImg[Page_p] == None:
+	def _transformImg(self, Img_p, Page_p):
+		if Img_p == None:
 			return False
 		if self._invertImg:
-			self._modifiedImg[Page_p] = ImageOps.invert(self._modifiedImg[Page_p])
+			Img_p = ImageOps.invert(Img_p)
 		if self._grayscaleImg:
-			self._modifiedImg[Page_p] = ImageOps.grayscale(self._modifiedImg[Page_p])
+			Img_p = ImageOps.grayscale(Img_p)
 		if self._blackWhiteImg:
 			lut = [255 if v > self._blackWhiteImgValue else 0 for v in range(256)]
-			self._modifiedImg[Page_p] = self._modifiedImg[Page_p].point(lut)
+			Img_p = Img.point(lut)
 		if self._debug: # Debug code
-			self._modifiedImg[Page_p].save("/tmp/ocrTransformed" + str(Page_p) + ".png")
+			Img_p.save("/tmp/ocrTransformed" + str(Page_p) + ".png")
 			print("save transformed image:/tmp/ocrTransformed" + str(Page_p) + ".png")			
-		return True
-
+		return Img_p
+		
+	def _getImg(self, Page_p):
+		return self._img[Page_p]
+		
 	def _OCRPages(self, ID):
 		if self._debug:
 			print("start thread " + str(ID))
@@ -221,9 +223,11 @@ class OCRpdf(Gtk.Window):
 			self.lock.release()
 			if self._debug:
 				print('Page:' +  str(curPageNo - 1))
-			self._scaleImg(curPageNo - 1)
-			self._transformImg(curPageNo - 1)
-			self._ocrImage(curPageNo - 1)
+			img = self._getImg(curPageNo - 1)
+			img = self._scaleImg(img, curPageNo - 1)
+			img = self._transformImg(img, curPageNo - 1)
+			self._ocrImage(img, curPageNo - 1)
+			img = None
 		self.lock.acquire(True)
 		self._currNoOfOCRThreads -= 1
 		if (self._currNoOfOCRThreads == 0):
@@ -240,9 +244,8 @@ class OCRpdf(Gtk.Window):
 		self._OCRText = []
 		self._OCRThreadsFinished = False
 		self._currPageNo = 0		
-		for i in range(self._pageNo):	
-			self._OCRText.append('')
-			self._OCRWords.append('')
+    		self._OCRText = [None] * self._pageNo
+		self._OCRWords = [None] * self._pageNo
 		self._scrolledWindowTree = None
 		self._scrolledWindowText = None
 		self._textbox = None
