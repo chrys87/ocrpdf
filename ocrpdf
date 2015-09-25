@@ -60,13 +60,14 @@ class OCRpdf(Gtk.Window):
 		self._file = file_p
 		self._img = []
 		self._pageNo = 0
+		self.pageFound = True
 		self._currPageNo = 0
 		self._grayscaleImg = False
 		self._invertImg = False
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
 		self._scaleFactor = 1
-		self._maxNoOfOCRThreads = 2
+		self._maxNoOfOCRThreads = 3
 		self._currNoOfOCRThreads = 0
 		self._OCRThreadsFinished = False
 		self.GTKmainIsRunning = False
@@ -106,35 +107,71 @@ class OCRpdf(Gtk.Window):
 	def _setSendToClipboard(self, sendToClipboard_p = False):
 		self._sendToClipboard = sendToClipboard_p
 
-	def convertMGtoPIL(self, magickimage):
-		magickimage.write("/tmp/ocrfilepage.jpg")
-		pilimage = Image.open("/tmp/ocrfilepage.jpg")
-		pilimage.save("/tmp/ocrfilepage.jpg") # strange... why i need this? without an IOerror rises
-
+	def convertMGtoPIL(self, magickimage, Page_g):
+		magickimage.write("/tmp/ocrfilepage" + str(Page_g) + ".jpg")
+		pilimage = Image.open("/tmp/ocrfilepage" + str(Page_g) + ".jpg")
+		pilimage.save("/tmp/ocrfilepage" + str(Page_g) + ".jpg") # strange... why i need this? without an IOerror rises
+		os.remove("/tmp/ocrfilepage" + str(Page_g) + ".jpg")
 		return pilimage
 
+	def _readPage(self, Page_g):
+		if self._debug:
+			print("start pageseperation thread " + str(Page_g))
+		mgImg = PythonMagick.Image()
+		mgImg.density("300")		
+		try:
+			mgImg.read(self._file+'['+ str(Page_g) + ']')
+			self._img.append(None)
+			self._img[Page_g] = self.convertMGtoPIL(mgImg, Page_g)
+			self.lock.acquire(True)
+			self._pageNo += 1			
+			self.lock.release()			
+			if self._debug: # Debug code
+				print("save page: /tmp/page"+str(Page_g)+".png")
+				self._img[Page_g].save("/tmp/page"+str(Page_g)+".png")
+		except:
+			self.lock.acquire(True)
+			self.pageFound = False
+			self.lock.release()	
+		if self._debug:
+			print("finish pageseperation thread " + str(Page_g))
+		self.lock.acquire(True)
+		self._currNoOfOCRThreads -= 1
+		if (self._currNoOfOCRThreads == 0):
+			self._OCRThreadsFinished = True
+			if self._debug:
+				print("finish last Main thread " + str(Page_g))
+		elif self._debug:
+			print("finish Main thread " + str(Page_g))
+		self.lock.release()				
 	def _readFile(self):
 		if self._file == '':
 			return False
 		mime = MimeTypes()
 		mime_type = mime.guess_type(self._file)
-		
-		mgImg = PythonMagick.Image()
-		mgImg.density("300")		
-		pageFound = True
-		while (pageFound): # as long as there pages
-			try:
-				mgImg.read(self._file+'['+ str(self._pageNo) + ']')
-				self._img.append(self.convertMGtoPIL(mgImg))
-				if self._debug: # Debug code
-					print("save page: /tmp/page"+str(self._pageNo)+".png")
-					self._img[self._pageNo].save("/tmp/page"+str(self._pageNo)+".png")
-				self._pageNo += 1
+		self._currNoOfOCRThreads = 0
+		self.pageFound = True
+		self._pageNo = 0
+		self._OCRThreadsFinished = False
+		pageNo = 0
+		while( self.pageFound):
+			if (self._currNoOfOCRThreads < self._maxNoOfOCRThreads):
+				self.lock.acquire(True)
+				self._currNoOfOCRThreads += 1
+				self.lock.release()			
+				if self._debug:
+					print("threadpage: " + str(pageNo))
+				start_new_thread( self._readPage,(pageNo,) )
+				pageNo += 1
 				if (mime_type[0]) != 'application/pdf': # not pdf
-					pageFound = False
-					self._scaleFactor = 3				
-			except:
-				pageFound = False
+					self._scaleFactor = 3
+					self.lock.acquire(True)
+					self.pageFound = False
+					self.lock.release()			
+
+			
+		while(not self._OCRThreadsFinished):
+			time.sleep(0.3)
 		if self._debug:
 			print("No of Pages: " + str(self._pageNo))
 		return True
@@ -215,7 +252,7 @@ class OCRpdf(Gtk.Window):
 		
 	def _OCRPages(self, ID):
 		if self._debug:
-			print("start thread " + str(ID))
+			print("start Main thread " + str(ID))
 		while( self._currPageNo < self._pageNo):
 			self.lock.acquire(True)
 			self._currPageNo += 1
@@ -233,19 +270,21 @@ class OCRpdf(Gtk.Window):
 		if (self._currNoOfOCRThreads == 0):
 			self._OCRThreadsFinished = True
 			if self._debug:
-				print("finish last thread " + str(ID))
+				print("finish last Main thread " + str(ID))
 		elif self._debug:
-			print("finish thread " + str(ID))
+			print("finish Main thread " + str(ID))
 		self.lock.release()
-
 	def _proceedPages(self):
 		self._OCRWords = []
 		self._OCRWordList = []
 		self._OCRText = []
 		self._OCRThreadsFinished = False
+		self._currNoOfOCRThreads = 0
 		self._currPageNo = 0		
-    		self._OCRText = [None] * self._pageNo
-		self._OCRWords = [None] * self._pageNo
+		for i in range(self._pageNo):
+			self._OCRText.append('')
+			self._OCRWords.append('')
+
 		self._scrolledWindowTree = None
 		self._scrolledWindowText = None
 		self._textbox = None
@@ -260,7 +299,7 @@ class OCRpdf(Gtk.Window):
 			start_new_thread( self._OCRPages,(self._currNoOfOCRThreads,) )
 			
 		while(not self._OCRThreadsFinished):
-			time.sleep(0.3)
+			time.sleep(0.2)
 
 		for i in range(self._pageNo):
 			self._fillOCRWordlist(i)
