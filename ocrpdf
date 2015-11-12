@@ -4,7 +4,7 @@
 
 """OCRpdf"""
 
-__version__   = "0.8.0"
+__version__   = "0.8.1"
 __copyright__ = "Copyright (c) 2015 Chrys"
 __license__   = "GPL"
 __authors__   = ["chrys"]
@@ -34,6 +34,7 @@ import gi
 #GTK/GDK/Wnck/GObject
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
+gi.require_version("Wnck", "3.0")
 from gi.repository import Gtk, Gdk, GObject, Wnck
 
 # here the class
@@ -65,6 +66,7 @@ class OCRpdf(Gtk.Window):
 		self._grayscaleImg = False
 		self._invertImg = False
 		self._blackWhiteImg = False
+		self._printToStdOut = False
 		self._blackWhiteImgValue = 200
 		self._scaleFactor = 1
 		self._maxNoOfOCRThreads = 3
@@ -103,6 +105,9 @@ class OCRpdf(Gtk.Window):
 
 	def _setBlackWhiteImgValue(self, blackWhiteImgValue_p = 200):
 		self._blackWhiteImgValue = blackWhiteImgValue_p
+
+	def _setPrintToStdOut(self, printToStdOut_p = False):
+                self._printToStdOut = printToStdOut_p
 
 	def _setSendToClipboard(self, sendToClipboard_p = False):
 		self._sendToClipboard = sendToClipboard_p
@@ -274,6 +279,7 @@ class OCRpdf(Gtk.Window):
 		elif self._debug:
 			print("finish Main thread " + str(ID))
 		self.lock.release()
+
 	def _proceedPages(self):
 		self._OCRWords = []
 		self._OCRWordList = []
@@ -310,6 +316,8 @@ class OCRpdf(Gtk.Window):
 			
 		if self._sendToClipboard:
 			self._setTextToClipboard( self._fileText)
+		if self._printToStdOut:
+			print(self._fileText)
 
 	def _refreshContent(self):
 		if self._isRefreshing == True:
@@ -578,6 +586,7 @@ class OCRreader():
 		self._blackWhiteImg = False
 		self._blackWhiteImgValue = 200
 		self._file = ''
+		self._printToStdOut = False
 		self._maxNoOfOCRThreads = 4
 		self._setCommandLineOptions()
 
@@ -593,6 +602,7 @@ class OCRreader():
 		self._Navigation._setBlackWhiteImgValue(self._blackWhiteImgValue)
 		self._Navigation._setSendToClipboard(self._sendToClipboard)
 		self._Navigation._setHideGui(self._hideGui)
+		self._Navigation._setPrintToStdOut(self._printToStdOut)
 		self._Navigation._setMaxNoOfOCRThreads(self._maxNoOfOCRThreads)
 		
 		if self._Navigation._readFile():
@@ -604,7 +614,7 @@ class OCRreader():
 		#FUNCTIONS
 	def _setCommandLineOptions(self):
 		try:
-			myopts, args = getopt.getopt(sys.argv[1:],"hl:vncgj:ibt:f:")
+			myopts, args = getopt.getopt(sys.argv[1:],"hl:vnpcgj:ibt:f:")
 			###############################
 			# o == option
 			# a == argument passed to the o
@@ -632,6 +642,8 @@ class OCRreader():
 					self._languageCode = a
 				elif o == '-n':
 					self._hideGui = True
+				elif o == '-p':
+					self._printToStdOut = True
 				elif o == '-h':
 					self._printHelp()
 		except:
@@ -639,11 +651,12 @@ class OCRreader():
 
 	def _printHelp(self):
 		print(__version__)
-		print("ocrdesktop -f <filename> -h -l -n -c -i -j -g -b -t")
+		print("ocrdesktop -f <filename> -h -l -n -p -c -i -j -g -b -t")
 		print("-h		Print help with start")
 		print("-f <fil> Inputfile for OCR process")
 		print("-l <lang>        set the OCR language default=eng")
 		print("-n		hide GUI  (use with -c")
+		print("-p               print to STDOUT")
 		print("-v		print debug messages")
 		print("-c		Send to Clipboard")
 		print("-i       Invert the picture colors")
