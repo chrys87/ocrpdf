@@ -614,7 +614,7 @@ class OCRreader():
 		#FUNCTIONS
 	def _setCommandLineOptions(self):
 		try:
-			myopts, args = getopt.getopt(sys.argv[1:],"hl:vnpcgj:ibt:f:")
+			myopts, args = getopt.getopt(sys.argv[1:],"hl:vnocgj:ibt:f:")
 			###############################
 			# o == option
 			# a == argument passed to the o
@@ -642,7 +642,7 @@ class OCRreader():
 					self._languageCode = a
 				elif o == '-n':
 					self._hideGui = True
-				elif o == '-p':
+				elif o == '-o':
 					self._printToStdOut = True
 				elif o == '-h':
 					self._printHelp()
@@ -651,12 +651,12 @@ class OCRreader():
 
 	def _printHelp(self):
 		print(__version__)
-		print("ocrdesktop -f <filename> -h -l -n -p -c -i -j -g -b -t")
+		print("ocrdesktop -f <filename> -h -l -n -c -o -i -j -g -b -t")
 		print("-h		Print help with start")
 		print("-f <fil> Inputfile for OCR process")
 		print("-l <lang>        set the OCR language default=eng")
-		print("-n		hide GUI  (use with -c")
-		print("-p               print to STDOUT")
+		print("-n		hide GUI  (use with -c or -o")
+		print("-o               print to STDOUT")
 		print("-v		print debug messages")
 		print("-c		Send to Clipboard")
 		print("-i       Invert the picture colors")
