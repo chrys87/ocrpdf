@@ -31,11 +31,10 @@ import tesserwrap
 #gi
 import gi
 
-#GTK/GDK/Wnck/GObject
+#GTK/GDK/GObject
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-gi.require_version("Wnck", "3.0")
-from gi.repository import Gtk, Gdk, GObject, Wnck
+from gi.repository import Gtk, Gdk, GObject
 
 # here the class
 class OCRpdf(Gtk.Window):
