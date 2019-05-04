@@ -122,7 +122,7 @@ class OCRpdf(Gtk.Window):
 		if self._debug:
 			print("start pageseperation thread " + str(Page_g))
 		mgImg = PythonMagick.Image()
-		mgImg.density("300")		
+		#mgImg.density(300)
 		try:
 			mgImg.read(self._file+'['+ str(Page_g) + ']')
 			self._img.append(None)
@@ -133,7 +133,9 @@ class OCRpdf(Gtk.Window):
 			if self._debug: # Debug code
 				print("save page: /tmp/page"+str(Page_g)+".png")
 				self._img[Page_g].save("/tmp/page"+str(Page_g)+".png")
-		except:
+		except Exception as e:
+			if self._debug:
+				print(e)
 			self.lock.acquire(True)
 			self.pageFound = False
 			self.lock.release()	
