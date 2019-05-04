@@ -77,8 +77,7 @@ class OCRpdf(Gtk.Window):
 		self.regexTrailingSpacesFirstLine = re.compile('\n\s') #remove trailing spaces
 		self.regexTrailingSpaces = re.compile('^\s') #remove trailing space in first line
 		self.regexEndingSpaces = re.compile('$\n') #remove ending newline
-		locale.setlocale(locale.LC_NUMERIC, 'C') #needed by tesseract in non english languages 
-		self._languageCode = 'eng'
+ 		locale.setlocale(locale.LC_ALL, 'C') #needed by tesseract in non english languages 		self._languageCode = 'eng'
 		self._tess = None
 		self._isRefreshing = False
 		self.lock = allocate_lock()
@@ -193,7 +192,16 @@ class OCRpdf(Gtk.Window):
 	def _ocrImage(self, Img_p, Page_p):
 		if Img_p is None:
 			return False
-		tess = tesseract("/usr/share", self._languageCode)
+		if os.path.exists("/usr/share/tesseract-ocr/tessdata/"):
+		    tesseractData = "/usr/share/tesseract-ocr/"
+		elif os.path.exists("/usr/share/tesseract/tessdata/"):
+		    tesseractData = "/usr/share/tesseract/tessdata/"
+		elif os.path.exists("/usr/share/tessdata/"):
+		    tesseractData = "/usr/share/tessdata/"		
+		else:
+		    tesseractData = "/usr/share/"
+
+		tess = tesseract(tesseractData, self._languageCode)
 		tess.set_page_seg_mode(tesserwrap.PageSegMode.PSM_AUTO )
 		if self._debug: # Debug code
 			print("OCR Page:"+str(Page_p))			
