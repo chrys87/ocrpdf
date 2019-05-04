@@ -78,7 +78,8 @@ class OCRpdf(Gtk.Window):
 		self.regexTrailingSpacesFirstLine = re.compile('\n\s') #remove trailing spaces
 		self.regexTrailingSpaces = re.compile('^\s') #remove trailing space in first line
 		self.regexEndingSpaces = re.compile('$\n') #remove ending newline
- 		locale.setlocale(locale.LC_ALL, 'C') #needed by tesseract in non english languages 		self._languageCode = 'eng'
+		locale.setlocale(locale.LC_ALL, 'C') #needed by tesseract in non english languages
+		self._languageCode = 'eng'
 		self._tess = None
 		self._isRefreshing = False
 		self.lock = allocate_lock()
