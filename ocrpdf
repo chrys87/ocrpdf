@@ -25,9 +25,9 @@ from PIL import Image
 from PIL import ImageOps
 
 #tesseract
-from tesserwrap import tesseract
 import tesserwrap
-
+from tesserwrap import Tesseract 
+ 
 #gi
 import gi
 
@@ -205,7 +205,7 @@ class OCRpdf(Gtk.Window):
 		else:
 		    tesseractData = "/usr/share/"
 
-		tess = tesseract(tesseractData, self._languageCode)
+		tess = Tesseract(tesseractData, self._languageCode)
 		tess.set_page_seg_mode(tesserwrap.PageSegMode.PSM_AUTO )
 		if self._debug: # Debug code
 			print("OCR Page:"+str(Page_p))			
